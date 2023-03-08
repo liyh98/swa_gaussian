@@ -15,11 +15,18 @@ from gpytorch.distributions import MultivariateNormal
 from ..utils import flatten, unflatten_like
 
 
-def swag_parameters(module, params, no_cov_mat=True, stochastic=False):
+def swag_parameters(module, params, no_cov_mat=True, stochastic=None):
+    flag = True
+    if stochastic is not None:
+        if stochastic[0] is False:
+            stochastic[0] = True
+        else:
+            flag = False
     for name in list(module._parameters.keys()):
         if module._parameters[name] is None:
             continue
-        if stochastic:
+
+        if flag:
             data = module._parameters[name].data
             module._parameters.pop(name)
             module.register_buffer("%s_mean" % name, data.new(data.size()).zero_())
@@ -30,14 +37,14 @@ def swag_parameters(module, params, no_cov_mat=True, stochastic=False):
                     "%s_cov_mat_sqrt" % name, data.new_empty((0, data.numel())).zero_()
                 )
 
-        params.append((module, name, stochastic))
+        params.append((module, name, flag))
 
 
 class SWAGP(torch.nn.Module):
     def __init__(
         self, base, no_cov_mat=True, max_num_models=0, var_clamp=1e-30, *args, **kwargs
     ):
-        super(SWAG, self).__init__()
+        super(SWAGP, self).__init__()
 
         self.register_buffer("n_models", torch.zeros([1], dtype=torch.long))
         self.params = list()
@@ -49,16 +56,13 @@ class SWAGP(torch.nn.Module):
 
         self.base = base(*args, **kwargs)
         
-        modules = self.base.children()
-        
-        swag_parameters(
-                module=next(modules), params=self.params, no_cov_mat=self.no_cov_mat, stochastic=True
+        stochastic = [False]
+        self.base.apply(
+            lambda module: swag_parameters(
+                module=module, params=self.params, no_cov_mat=self.no_cov_mat, stochastic=stochastic
             )
-        for module in modules:
-            swag_parameters(
-                module=module, params=self.params, no_cov_mat=self.no_cov_mat
-            )
-
+        )
+    
     def forward(self, *args, **kwargs):
         return self.base(*args, **kwargs)
 
@@ -158,7 +162,7 @@ class SWAGP(torch.nn.Module):
     def collect_model(self, base_model):
         for (module, name, stochastic), base_param in zip(self.params, base_model.parameters()):
             if stochastic is False:
-                module.__setattr__(name, base_param.data)
+                module.__setattr__(name, base_param)
             else:
                 mean = module.__getattr__("%s_mean" % name)
                 sq_mean = module.__getattr__("%s_sq_mean" % name)
