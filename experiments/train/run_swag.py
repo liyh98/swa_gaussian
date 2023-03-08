@@ -9,7 +9,7 @@ import torchvision
 import numpy as np
 
 from swag import data, models, utils, losses
-from swag.posteriors import SWAG
+from swag.posteriors import SWAG, SWAGP
 
 parser = argparse.ArgumentParser(description="SGD/SWA training")
 parser.add_argument(
@@ -109,6 +109,9 @@ parser.add_argument(
 )
 
 parser.add_argument("--swa", action="store_true", help="swa usage flag (default: off)")
+
+parser.add_argument("--partial", action="store_true", help="swa usage flag (default: off)")
+
 parser.add_argument(
     "--swa_start",
     type=float,
@@ -249,15 +252,26 @@ if args.resume is not None:
 
 if args.swa and args.swa_resume is not None:
     checkpoint = torch.load(args.swa_resume)
-    swag_model = SWAG(
-        model_cfg.base,
-        no_cov_mat=args.no_cov_mat,
-        max_num_models=args.max_num_models,
-        loading=True,
-        *model_cfg.args,
-        num_classes=num_classes,
-        **model_cfg.kwargs
-    )
+    if args.partial:
+        swag_model = SWAGP(
+            model_cfg.base,
+            no_cov_mat=args.no_cov_mat,
+            max_num_models=args.max_num_models,
+            loading=True,
+            *model_cfg.args,
+            num_classes=num_classes,
+            **model_cfg.kwargs
+        )
+    else:
+        swag_model = SWAG(
+            model_cfg.base,
+            no_cov_mat=args.no_cov_mat,
+            max_num_models=args.max_num_models,
+            loading=True,
+            *model_cfg.args,
+            num_classes=num_classes,
+            **model_cfg.kwargs
+        )
     swag_model.to(args.device)
     swag_model.load_state_dict(checkpoint["state_dict"])
 
